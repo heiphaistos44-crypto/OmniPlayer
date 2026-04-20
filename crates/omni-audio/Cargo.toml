@@ -1,0 +1,13 @@
+[package]
+name    = "omni-audio"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+omni-core         = { path = "../omni-core" }
+cpal              = { workspace = true }
+rubato            = { workspace = true }
+crossbeam-channel = { workspace = true }
+anyhow            = { workspace = true }
+log               = { workspace = true }
+parking_lot       = { workspace = true }

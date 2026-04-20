@@ -1,0 +1,23 @@
+[package]
+name    = "omni-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ffmpeg-next       = { workspace = true }
+tokio             = { workspace = true }
+anyhow            = { workspace = true }
+thiserror         = { workspace = true }
+log               = { workspace = true }
+serde             = { workspace = true }
+crossbeam-channel = { workspace = true }
+parking_lot       = { workspace = true }
+bytemuck          = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Media_MediaFoundation",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Foundation",
+] }

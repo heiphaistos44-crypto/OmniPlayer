@@ -1,0 +1,12 @@
+[package]
+name    = "omni-renderer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+omni-core  = { path = "../omni-core" }
+wgpu       = { workspace = true }
+egui-wgpu  = { workspace = true }
+bytemuck   = { workspace = true }
+anyhow     = { workspace = true }
+log        = { workspace = true }

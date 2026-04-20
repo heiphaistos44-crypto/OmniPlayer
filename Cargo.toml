@@ -1,0 +1,58 @@
+[workspace]
+members = [
+    "crates/omni-core",
+    "crates/omni-renderer",
+    "crates/omni-audio",
+    "crates/omni-player",
+]
+resolver = "2"
+
+[workspace.package]
+version  = "1.0.0"
+edition  = "2021"
+authors  = ["OmniPlayer"]
+license  = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio              = { version = "1",    features = ["full"] }
+# Error handling
+anyhow             = "1"
+thiserror          = "1"
+# Logging
+log                = "0.4"
+env_logger         = "0.11"
+# Serialization
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+# Concurrency & channels
+crossbeam-channel  = "0.5"
+parking_lot        = "0.12"
+# FFmpeg bindings (requires FFMPEG_DIR env var or vcpkg)
+ffmpeg-next        = "7"
+# GUI (egui + wgpu backend)
+egui               = "0.28"
+eframe             = { version = "0.28", features = ["wgpu"] }
+egui-wgpu          = "0.28"
+# GPU
+wgpu               = { version = "22", features = ["dx12", "vulkan"] }
+bytemuck           = { version = "1", features = ["derive"] }
+# Audio
+cpal               = "0.15"
+rubato             = "0.15"
+# Utilities
+uuid               = { version = "1", features = ["v4"] }
+dirs               = "5"
+walkdir            = "2"
+regex              = "1"
+reqwest            = { version = "0.12", features = ["json", "blocking"] }
+
+[profile.release]
+opt-level       = 3
+lto             = "thin"
+codegen-units   = 1
+strip           = true
+panic           = "abort"
+
+[profile.dev]
+opt-level       = 1   # faster debug builds without losing too much speed

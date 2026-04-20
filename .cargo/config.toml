@@ -1,0 +1,15 @@
+# Windows x64 target — primary build
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+avx2,+fma"]
+
+# Windows x32 target
+[target.i686-pc-windows-msvc]
+rustflags = []
+
+[env]
+# Override via CI or environment: set FFMPEG_DIR=C:\ffmpeg
+# FFMPEG_DIR = "C:\\ffmpeg"
+RUST_LOG = "info"
+
+[build]
+jobs = 0   # use all available cores

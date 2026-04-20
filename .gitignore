@@ -1,0 +1,30 @@
+# Rust
+target/
+Cargo.lock
+
+# Go
+dist/
+*.exe
+go.sum
+
+# Env / secrets
+.env
+*.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Temp
+tmp/
+temp/

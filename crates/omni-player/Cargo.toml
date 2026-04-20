@@ -1,0 +1,37 @@
+[package]
+name    = "omni-player"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "omniplayer"
+path = "src/main.rs"
+
+[dependencies]
+omni-core     = { path = "../omni-core" }
+omni-renderer = { path = "../omni-renderer" }
+omni-audio    = { path = "../omni-audio" }
+
+egui          = { workspace = true }
+eframe        = { workspace = true }
+egui-wgpu     = { workspace = true }
+wgpu          = { workspace = true }
+
+tokio         = { workspace = true }
+anyhow        = { workspace = true }
+log           = { workspace = true }
+env_logger    = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+dirs          = { workspace = true }
+parking_lot   = { workspace = true }
+crossbeam-channel = { workspace = true }
+reqwest       = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winuser", "shellapi"] }
+
+[package.metadata.winresource]
+FileDescription = "OmniPlayer — Lecteur Multimédia Ultra-Complet"
+ProductName     = "OmniPlayer"
+LegalCopyright  = "MIT"
