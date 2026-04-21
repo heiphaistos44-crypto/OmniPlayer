@@ -31,8 +31,8 @@ pub enum PipelineEvent {
 }
 
 /// Capacité max des queues de frames (frames buffered).
-const VIDEO_QUEUE_DEPTH: usize = 8;
-const AUDIO_QUEUE_DEPTH: usize = 32;
+const VIDEO_QUEUE_DEPTH: usize = 16;
+const AUDIO_QUEUE_DEPTH: usize = 256;
 
 pub struct MediaPipeline {
     cmd_tx:   Sender<PipelineCommand>,
