@@ -109,7 +109,8 @@ fn draw_idle_screen(ui: &mut Ui, rect: Rect) {
     let p = ui.painter();
     p.rect_filled(rect, 0.0, Color32::from_rgb(8, 8, 14));
 
-    let c = rect.center();
+    // Centre the content in the area above the controls bar (~92px at bottom)
+    let c = egui::pos2(rect.center().x, rect.top() + (rect.height() - 92.0) * 0.5);
 
     // Anneau décoratif (stroke seulement, pas de fill)
     p.circle_stroke(c, 54.0,

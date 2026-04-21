@@ -1,6 +1,5 @@
 use anyhow::{Context as _, Result};
 use ffmpeg_next as ffmpeg;
-use std::path::Path;
 
 use crate::hw_accel::HwAccelContext;
 

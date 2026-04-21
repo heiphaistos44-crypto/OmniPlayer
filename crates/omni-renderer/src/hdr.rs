@@ -11,9 +11,9 @@ pub struct HdrTonemapper {
     bgl:          BindGroupLayout,
     uniform_buf:  Buffer,
     uniform_bg:   BindGroup,
-    uniform_bgl:  BindGroupLayout,
+    #[allow(dead_code)] uniform_bgl:  BindGroupLayout,
     bind_group:   Option<BindGroup>,
-    hdr_tex_size: Option<(u32, u32)>,
+    #[allow(dead_code)] hdr_tex_size: Option<(u32, u32)>,
 }
 
 /// Paramètres uniforms envoyés au shader HDR.

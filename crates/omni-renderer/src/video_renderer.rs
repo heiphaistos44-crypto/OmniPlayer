@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use wgpu::{util::DeviceExt, *};
 
 use crate::frame_upload::YuvTextures;
@@ -14,9 +14,9 @@ pub struct VideoRenderer {
     bind_group_layout: BindGroupLayout,
     bind_group:      Option<BindGroup>,
     yuv_textures:    Option<YuvTextures>,
-    uniform_buf:     Buffer,
+    #[allow(dead_code)] uniform_buf: Buffer,
     uniform_bg:      BindGroup,
-    uniform_bgl:     BindGroupLayout,
+    #[allow(dead_code)] uniform_bgl: BindGroupLayout,
 }
 
 /// Uniforms envoyés au shader (matrice couleur + offset).

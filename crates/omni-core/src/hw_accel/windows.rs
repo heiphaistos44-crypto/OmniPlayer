@@ -2,7 +2,6 @@
 
 #[cfg(windows)]
 pub mod win {
-    use anyhow::Result;
 
     pub fn detect_available_hw_accels() -> Vec<&'static str> {
         let mut available = Vec::new();

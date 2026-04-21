@@ -32,7 +32,7 @@ pub struct OmniApp {
     seek_request:      Option<f64>,
     video_frame:       SharedFrame,
     osd:               Option<Osd>,
-    services:          Option<ServicesClient>,
+    #[allow(dead_code)] services: Option<ServicesClient>,
     // Auto-hide controls
     last_mouse_move:   f64,
     // Image viewer

@@ -103,7 +103,7 @@ impl VideoDecoder {
 fn extract_planes(frame: &ffmpeg::util::frame::video::Video) -> (Vec<Vec<u8>>, Vec<usize>, PixelFormat) {
     match frame.format() {
         ffmpeg::format::Pixel::YUV420P => {
-            let (w, h) = (frame.width() as usize, frame.height() as usize);
+            let (_w, h) = (frame.width() as usize, frame.height() as usize);
             let y_stride  = frame.stride(0);
             let uv_stride = frame.stride(1);
 
@@ -114,7 +114,7 @@ fn extract_planes(frame: &ffmpeg::util::frame::video::Video) -> (Vec<Vec<u8>>, V
             (vec![y, u, v], vec![y_stride, uv_stride, uv_stride], PixelFormat::Yuv420p)
         }
         ffmpeg::format::Pixel::NV12 => {
-            let (w, h) = (frame.width() as usize, frame.height() as usize);
+            let (_w, h) = (frame.width() as usize, frame.height() as usize);
             let y_stride  = frame.stride(0);
             let uv_stride = frame.stride(1);
             let y  = frame.data(0)[..y_stride * h].to_vec();
