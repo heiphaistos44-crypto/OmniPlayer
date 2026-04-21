@@ -1,13 +1,30 @@
-use egui::{Color32, Rect, Ui, Vec2};
+use egui::{Color32, CornerRadius, Rect, TextureHandle, Ui, Vec2};
 use eframe::egui_wgpu;
 use crate::player::{Player, PlayerState};
 use crate::video_callback::SharedFrame;
+use crate::ui::image_viewer::ImageViewer;
 
-const SUBTITLE_BG: Color32 = Color32::from_black_alpha(178);
+const SUBTITLE_BG: Color32 = Color32::from_black_alpha(185);
 
-/// Zone vidéo centrale : rendu wgpu réel + sous-titres + OSD.
-pub fn show(ui: &mut Ui, player: &Player, video_frame: SharedFrame, osd: Option<&str>) {
+/// Zone vidéo / image centrale avec overlays.
+pub fn show(
+    ui:          &mut Ui,
+    player:      &Player,
+    video_frame: SharedFrame,
+    osd:         Option<&str>,
+    image_tex:   Option<&TextureHandle>,
+    img_viewer:  &mut ImageViewer,
+) {
     let available = ui.available_rect_before_wrap();
+
+    if player.is_image_mode() {
+        if let (Some(tex), Some(img)) = (image_tex, &player.image_frame) {
+            img_viewer.show(ui, tex, img.width, img.height);
+        } else {
+            draw_idle_screen(ui, available);
+        }
+        return;
+    }
 
     match &player.state {
         PlayerState::Idle     => draw_idle_screen(ui, available),
@@ -32,9 +49,7 @@ pub fn show(ui: &mut Ui, player: &Player, video_frame: SharedFrame, osd: Option<
 }
 
 fn draw_video(ui: &mut Ui, rect: Rect, video_frame: SharedFrame) {
-    // Fond noir (visible avant la 1re frame)
     ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
-    // Callback wgpu : upload YUV + rendu
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(
         rect,
         crate::video_callback::VideoPaintCallback { frame: video_frame },
@@ -45,96 +60,136 @@ fn draw_subtitle(ui: &mut Ui, rect: Rect, text: &str) {
     let painter = ui.painter();
     let font    = egui::FontId::proportional(18.0);
     let lines: Vec<&str> = text.lines().collect();
-    let line_h  = 24.0;
-    let pad     = Vec2::new(12.0, 6.0);
+    let line_h  = 26.0;
+    let pad     = Vec2::new(16.0, 8.0);
     let max_chars = lines.iter().map(|l| l.len()).max().unwrap_or(1);
-    let box_w   = (max_chars as f32 * 10.2 + pad.x * 2.0).max(100.0);
+    let box_w   = (max_chars as f32 * 10.5 + pad.x * 2.0).max(100.0).min(rect.width() * 0.9);
     let box_h   = lines.len() as f32 * line_h + pad.y * 2.0;
-    let box_pos = egui::pos2(rect.center().x - box_w * 0.5, rect.bottom() - box_h - 40.0);
+    let box_pos = egui::pos2(
+        rect.center().x - box_w * 0.5,
+        rect.bottom() - box_h - 105.0, // au-dessus des contrôles
+    );
     let box_rect = Rect::from_min_size(box_pos, Vec2::new(box_w, box_h));
 
-    painter.rect_filled(box_rect, 5.0, SUBTITLE_BG);
+    painter.rect_filled(box_rect, CornerRadius::from(6.0_f32), SUBTITLE_BG);
+    // Bordure légère
+    painter.rect_stroke(box_rect, CornerRadius::from(6.0_f32),
+        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 20)),
+        egui::StrokeKind::Middle);
+
     for (i, line) in lines.iter().enumerate() {
+        // Ombre du texte
+        painter.text(
+            egui::pos2(rect.center().x + 1.0, box_pos.y + pad.y + i as f32 * line_h + line_h * 0.5 + 1.0),
+            egui::Align2::CENTER_CENTER, *line, font.clone(),
+            Color32::from_black_alpha(200),
+        );
         painter.text(
             egui::pos2(rect.center().x, box_pos.y + pad.y + i as f32 * line_h + line_h * 0.5),
-            egui::Align2::CENTER_CENTER,
-            *line, font.clone(), Color32::WHITE,
+            egui::Align2::CENTER_CENTER, *line, font.clone(), Color32::WHITE,
         );
     }
 }
 
 fn draw_osd(ui: &mut Ui, rect: Rect, text: &str) {
     let p   = ui.painter();
-    let bg  = Color32::from_rgba_unmultiplied(0, 0, 0, 155);
-    let pos = egui::pos2(rect.center().x, rect.top() + 46.0);
-    let sz  = Vec2::new(text.len() as f32 * 9.0 + 18.0, 28.0);
-    p.rect_filled(Rect::from_center_size(pos, sz), 6.0, bg);
-    p.text(pos, egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(15.0), Color32::WHITE);
+    let pos = egui::pos2(rect.center().x, rect.top() + 52.0);
+    let sz  = Vec2::new(text.len() as f32 * 9.5 + 22.0, 32.0);
+    let bg  = Rect::from_center_size(pos, sz);
+    p.rect_filled(bg, CornerRadius::from(6.0_f32),
+        Color32::from_rgba_premultiplied(10, 10, 20, 210));
+    p.rect_stroke(bg, CornerRadius::from(6.0_f32),
+        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(74, 158, 255, 80)),
+        egui::StrokeKind::Middle);
+    p.text(pos, egui::Align2::CENTER_CENTER, text,
+        egui::FontId::proportional(15.0), Color32::WHITE);
 }
 
 fn draw_idle_screen(ui: &mut Ui, rect: Rect) {
-    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(10, 10, 16));
     let p = ui.painter();
+    p.rect_filled(rect, 0.0, Color32::from_rgb(8, 8, 14));
+
     let c = rect.center();
 
-    p.circle_stroke(c, 50.0, egui::Stroke::new(1.0, Color32::from_rgb(28, 38, 58)));
-    p.text(c - Vec2::new(0.0, 60.0), egui::Align2::CENTER_CENTER,
-        "▶", egui::FontId::proportional(66.0), Color32::from_rgb(80, 140, 255));
-    p.text(c - Vec2::new(0.0, 12.0), egui::Align2::CENTER_CENTER,
-        "OmniPlayer", egui::FontId::proportional(28.0), Color32::WHITE);
-    p.text(c + Vec2::new(0.0, 22.0), egui::Align2::CENTER_CENTER,
-        "Glissez un fichier ici ou utilisez Fichier → Ouvrir",
-        egui::FontId::proportional(13.0), Color32::from_gray(125));
+    // Cercle de fond décoratif
+    p.circle_filled(c, 64.0,
+        Color32::from_rgba_premultiplied(74, 158, 255, 12));
+    p.circle_stroke(c, 64.0,
+        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(74, 158, 255, 35)));
+
+    // Icône play
+    p.text(egui::pos2(c.x, c.y - 16.0), egui::Align2::CENTER_CENTER,
+        "▶", egui::FontId::proportional(62.0), Color32::from_rgb(74, 158, 255));
+
+    p.text(egui::pos2(c.x, c.y + 42.0), egui::Align2::CENTER_CENTER,
+        "OmniPlayer", egui::FontId::proportional(26.0), Color32::from_gray(240));
+
+    p.text(egui::pos2(c.x, c.y + 68.0), egui::Align2::CENTER_CENTER,
+        "Glissez un fichier ici  ·  Ctrl+O pour ouvrir  ·  Ctrl+L pour une URL",
+        egui::FontId::proportional(12.0), Color32::from_gray(115));
 
     let shortcuts = [
-        ("Espace", "Play / Pause"),
+        ("Espace", "Lecture / Pause"),
         ("← / →",  "±10 secondes"),
-        ("↑ / ↓",  "Volume"),
-        ("M",       "Muet"),
+        ("↑ / ↓",  "Volume ±10 %"),
         ("F",       "Plein écran"),
+        ("M",       "Muet"),
         ("S",       "Sous-titres"),
         ("A",       "Piste audio"),
-        ("Ctrl+O",  "Ouvrir fichier"),
-        ("Ctrl+L",  "Ouvrir URL"),
+        ("I",       "Infos média"),
+        ("?",       "Aide raccourcis"),
     ];
-    let mut y = c.y + 56.0;
+    let mut y = c.y + 98.0;
     for (key, action) in &shortcuts {
-        p.text(egui::pos2(c.x - 86.0, y), egui::Align2::RIGHT_CENTER,
-            *key, egui::FontId::monospace(11.0), Color32::from_rgb(80, 140, 255));
-        p.text(egui::pos2(c.x - 70.0, y), egui::Align2::LEFT_CENTER,
-            *action, egui::FontId::proportional(11.0), Color32::from_gray(155));
-        y += 18.0;
+        p.rect_filled(
+            Rect::from_center_size(egui::pos2(c.x, y), Vec2::new(260.0, 16.0)),
+            CornerRadius::from(3.0_f32),
+            Color32::from_rgba_premultiplied(255, 255, 255, 4),
+        );
+        p.text(egui::pos2(c.x - 96.0, y), egui::Align2::RIGHT_CENTER,
+            *key, egui::FontId::monospace(10.5), Color32::from_rgb(74, 158, 255));
+        p.text(egui::pos2(c.x - 80.0, y), egui::Align2::LEFT_CENTER,
+            *action, egui::FontId::proportional(11.0), Color32::from_gray(150));
+        y += 19.0;
     }
 }
 
 fn draw_loading(ui: &mut Ui, rect: Rect) {
-    ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(8, 8, 14));
     let t    = ui.ctx().input(|i| i.time) as f32;
     let dots = ".".repeat(((t * 2.0) as usize % 4) + 1);
     ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER,
         format!("Chargement{dots}"),
-        egui::FontId::proportional(20.0), Color32::from_gray(175));
+        egui::FontId::proportional(18.0), Color32::from_gray(165));
     ui.ctx().request_repaint();
 }
 
 fn draw_buffering_overlay(ui: &mut Ui, rect: Rect, pct: u8) {
-    let bar_w = rect.width() * 0.35;
-    let bar_y = rect.center().y + 44.0;
-    let bg_r  = Rect::from_min_size(egui::pos2(rect.center().x - bar_w * 0.5, bar_y), Vec2::new(bar_w, 5.0));
-    let fil_r = Rect::from_min_size(bg_r.min, Vec2::new(bar_w * pct as f32 / 100.0, 5.0));
+    let bar_w = rect.width().min(400.0) * 0.6;
+    let bar_y = rect.bottom() - 130.0;
+    let bg_r  = Rect::from_min_size(
+        egui::pos2(rect.center().x - bar_w * 0.5, bar_y),
+        Vec2::new(bar_w, 4.0),
+    );
+    let fil_r = Rect::from_min_size(bg_r.min,
+        Vec2::new(bar_w * pct as f32 / 100.0, 4.0));
     let p     = ui.painter();
-    p.rect_filled(bg_r,  3.0, Color32::from_gray(40));
-    p.rect_filled(fil_r, 3.0, Color32::from_rgb(80, 140, 255));
-    p.text(egui::pos2(rect.center().x, bar_y - 14.0), egui::Align2::CENTER_CENTER,
-        format!("Mise en mémoire tampon… {pct}%"),
-        egui::FontId::proportional(13.0), Color32::WHITE);
+    p.rect_filled(bg_r,  CornerRadius::from(2.0_f32), Color32::from_gray(40));
+    p.rect_filled(fil_r, CornerRadius::from(2.0_f32), Color32::from_rgb(74, 158, 255));
+    p.text(egui::pos2(rect.center().x, bar_y - 16.0), egui::Align2::CENTER_CENTER,
+        format!("Chargement… {pct}%"),
+        egui::FontId::proportional(12.5), Color32::from_gray(185));
 }
 
 fn draw_error(ui: &mut Ui, rect: Rect, msg: &str) {
-    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(18, 5, 5));
+    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(16, 5, 5));
     let c = rect.center(); let p = ui.painter();
-    p.text(c - Vec2::new(0.0, 18.0), egui::Align2::CENTER_CENTER,
-        "⚠  Erreur de lecture", egui::FontId::proportional(20.0), Color32::from_rgb(255, 75, 75));
-    p.text(c + Vec2::new(0.0, 14.0), egui::Align2::CENTER_CENTER,
-        msg, egui::FontId::proportional(12.0), Color32::from_gray(175));
+    p.text(egui::pos2(c.x, c.y - 20.0), egui::Align2::CENTER_CENTER,
+        "⚠  Erreur de lecture",
+        egui::FontId::proportional(20.0), Color32::from_rgb(255, 75, 75));
+    p.text(egui::pos2(c.x, c.y + 16.0), egui::Align2::CENTER_CENTER,
+        msg, egui::FontId::proportional(12.0), Color32::from_gray(165));
+    p.text(egui::pos2(c.x, c.y + 40.0), egui::Align2::CENTER_CENTER,
+        "Appuyez sur Ctrl+O pour ouvrir un autre fichier",
+        egui::FontId::proportional(11.0), Color32::from_gray(110));
 }

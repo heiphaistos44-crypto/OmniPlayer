@@ -29,6 +29,7 @@ parking_lot   = { workspace = true }
 crossbeam-channel = { workspace = true }
 reqwest       = { workspace = true }
 rfd           = { workspace = true }
+image         = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi"] }

@@ -47,6 +47,7 @@ walkdir            = "2"
 regex              = "1"
 reqwest            = { version = "0.12", features = ["json", "blocking"] }
 rfd                = "0.14"
+image              = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "ico"] }
 
 [patch.crates-io]
 ffmpeg-next = { path = "patches/ffmpeg-next" }

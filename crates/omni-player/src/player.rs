@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use omni_core::decoder::subtitle::SubtitleTrack;
 use omni_core::decoder::DecodedVideoFrame;
 use omni_core::pipeline::clock::MasterClock;
 use omni_core::pipeline::{MediaPipeline, PipelineCommand, PipelineEvent};
-use omni_core::probe::{Chapter, MediaInfo};
+use omni_core::probe::{Chapter, MediaInfo, VideoStreamInfo};
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,6 +15,14 @@ pub enum PlayerState {
     Buffering(u8),
     EndOfFile,
     Error(String),
+}
+
+/// Frame image statique (RGBA8) pour le mode visionneuse.
+pub struct ImageFrame {
+    pub width:  u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+    pub path:   String,
 }
 
 pub struct Player {
@@ -30,6 +38,7 @@ pub struct Player {
     pub audio_track_idx:  usize,
     pub sub_track_idx:    Option<usize>,
     pub clock:            MasterClock,
+    pub image_frame:      Option<ImageFrame>,
     pipeline:             Option<MediaPipeline>,
 }
 
@@ -48,12 +57,14 @@ impl Player {
             audio_track_idx:  0,
             sub_track_idx:    None,
             clock:            MasterClock::new(),
+            image_frame:      None,
             pipeline:         None,
         }
     }
 
     pub fn open(&mut self, path: &str) -> Result<()> {
         if let Some(p) = &self.pipeline { p.send_command(PipelineCommand::Stop); }
+        self.pipeline         = None;
         self.state            = PlayerState::Loading;
         self.duration         = 0.0;
         self.position         = 0.0;
@@ -63,9 +74,57 @@ impl Player {
         self.chapters         = Vec::new();
         self.audio_track_idx  = 0;
         self.sub_track_idx    = None;
+        self.image_frame      = None;
         self.clock            = MasterClock::new();
-        self.pipeline         = Some(MediaPipeline::launch(path.to_string())?);
+
+        if omni_core::is_image_path(path) {
+            return self.open_image(path);
+        }
+
+        self.pipeline = Some(MediaPipeline::launch(path.to_string())?);
         Ok(())
+    }
+
+    fn open_image(&mut self, path: &str) -> Result<()> {
+        use image::GenericImageView as _;
+        let img = image::open(path)
+            .with_context(|| format!("image non lisible : {path}"))?
+            .into_rgba8();
+        let (width, height) = img.dimensions();
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("image")
+            .to_uppercase();
+        let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+
+        self.image_frame = Some(ImageFrame {
+            width, height, pixels: img.into_raw(), path: path.to_string(),
+        });
+        self.media_info = Some(MediaInfo {
+            path:          path.to_string(),
+            duration_secs: 0.0,
+            video: Some(VideoStreamInfo {
+                index:       0,
+                codec_name:  ext,
+                width, height,
+                fps:         0.0,
+                bit_rate:    file_size as i64,
+                hdr:         false,
+                color_space: "sRGB".to_string(),
+            }),
+            audio:     vec![],
+            subtitles: vec![],
+            chapters:  vec![],
+            format_name: "image".to_string(),
+            bit_rate:    file_size as i64,
+        });
+        self.state = PlayerState::Paused;
+        Ok(())
+    }
+
+    pub fn is_image_mode(&self) -> bool {
+        self.image_frame.is_some()
     }
 
     pub fn play_pause(&mut self) {
@@ -75,7 +134,7 @@ impl Player {
                 self.clock.pause();
                 self.state = PlayerState::Paused;
             }
-            PlayerState::Paused => {
+            PlayerState::Paused if !self.is_image_mode() => {
                 if let Some(p) = &self.pipeline { p.send_command(PipelineCommand::Resume); }
                 self.clock.resume();
                 self.state = PlayerState::Playing;
@@ -85,6 +144,7 @@ impl Player {
     }
 
     pub fn seek(&mut self, pos: f64) {
+        if self.is_image_mode() { return; }
         let pos = pos.clamp(0.0, self.duration.max(0.0));
         if let Some(p) = &self.pipeline { p.send_command(PipelineCommand::Seek(pos)); }
         self.position = pos;
@@ -109,9 +169,10 @@ impl Player {
 
     pub fn stop(&mut self) {
         if let Some(p) = &self.pipeline { p.send_command(PipelineCommand::Stop); }
-        self.pipeline = None;
-        self.state    = PlayerState::Idle;
-        self.position = 0.0;
+        self.pipeline    = None;
+        self.image_frame = None;
+        self.state       = PlayerState::Idle;
+        self.position    = 0.0;
     }
 
     pub fn load_subtitle(&mut self, path: &str) -> Result<()> {
@@ -146,9 +207,9 @@ impl Player {
             let n = info.subtitles.len();
             if n > 0 {
                 let next = match self.sub_track_idx {
-                    None    => Some(0),
+                    None              => Some(0),
                     Some(i) if i + 1 < n => Some(i + 1),
-                    _       => None,
+                    _                 => None,
                 };
                 self.sub_track_idx = next;
                 if let Some(p) = &self.pipeline {
@@ -194,6 +255,7 @@ impl Player {
     }
 
     pub fn poll_events(&mut self) {
+        if self.is_image_mode() { return; }
         let Some(pipeline) = &self.pipeline else { return };
 
         while let Some(event) = pipeline.try_recv_event() {
@@ -228,7 +290,8 @@ impl Player {
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self.state, PlayerState::Playing | PlayerState::Paused | PlayerState::Buffering(_))
+        matches!(self.state,
+            PlayerState::Playing | PlayerState::Paused | PlayerState::Buffering(_))
     }
 
     pub fn effective_volume(&self) -> f32 {
