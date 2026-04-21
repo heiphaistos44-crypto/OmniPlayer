@@ -3,53 +3,26 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use omni_core::decoder::DecodedAudioFrame;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
+use std::sync::{
+    atomic::{AtomicU64, AtomicBool, Ordering},
+    Arc,
+};
 
 use crate::resampler::AudioResampler;
 
-/// Ring buffer f32 interleaved, thread-safe.
-struct RingBuffer {
-    buf:  Vec<f32>,
-    head: usize,
-    tail: usize,
-    len:  usize,
-}
-
-impl RingBuffer {
-    fn new(capacity: usize) -> Self {
-        Self { buf: vec![0.0; capacity], head: 0, tail: 0, len: 0 }
-    }
-
-    fn push_slice(&mut self, data: &[f32]) {
-        for &s in data {
-            if self.len < self.buf.len() {
-                self.buf[self.tail] = s;
-                self.tail = (self.tail + 1) % self.buf.len();
-                self.len += 1;
-            }
-        }
-    }
-
-    fn pop_slice(&mut self, out: &mut [f32]) {
-        for o in out.iter_mut() {
-            if self.len > 0 {
-                *o = self.buf[self.head];
-                self.head = (self.head + 1) % self.buf.len();
-                self.len -= 1;
-            } else {
-                *o = 0.0;
-            }
-        }
-    }
-}
+// Capacité du ring buffer lock-free : 4 secondes @ 48kHz stéréo
+const RING_SECS: usize = 4;
 
 pub struct AudioEngine {
     _stream:     cpal::Stream,
     sender:      Sender<DecodedAudioFrame>,
     volume:      Arc<Mutex<f32>>,
-    paused:      Arc<Mutex<bool>>,
+    paused:      Arc<AtomicBool>,
     device_rate: u32,
     channels:    usize,
+    /// Nombre d'échantillons occupés dans le ring buffer (mis à jour par fill_ring).
+    ring_level:  Arc<AtomicU64>,
 }
 
 impl AudioEngine {
@@ -62,45 +35,61 @@ impl AudioEngine {
             .default_output_config()
             .context("config audio par défaut")?;
 
-        log::info!("audio: {:?} — {:?}", device.name(), config);
+        log::info!("audio device: {:?} — {:?}", device.name(), config);
 
         let device_rate = config.sample_rate().0;
         let channels    = config.channels() as usize;
+        let capacity    = device_rate as usize * channels * RING_SECS;
 
-        // 4 secondes de buffer pour absorber les pics de latence décodeur
-        let ring   = Arc::new(Mutex::new(RingBuffer::new(device_rate as usize * channels * 4)));
-        let volume = Arc::new(Mutex::new(1.0f32));
-        let paused = Arc::new(Mutex::new(false));
+        // Ring buffer lock-free SPSC
+        let rb: HeapRb<f32> = HeapRb::new(capacity);
+        let (producer, consumer) = rb.split();
 
-        let (tx, rx) = bounded::<DecodedAudioFrame>(128);
+        let volume     = Arc::new(Mutex::new(1.0f32));
+        let paused     = Arc::new(AtomicBool::new(false));
+        let ring_level = Arc::new(AtomicU64::new(0));
+
+        // Canal d'envoi de frames décodées vers le thread fill
+        let (tx, rx) = bounded::<DecodedAudioFrame>(256);
 
         // Thread de resampling + remplissage du ring
-        let ring_fill = ring.clone();
-        std::thread::Builder::new()
-            .name("audio-fill".into())
-            .spawn(move || fill_ring(rx, ring_fill, device_rate, channels))?;
+        {
+            let ring_level2 = ring_level.clone();
+            std::thread::Builder::new()
+                .name("audio-fill".into())
+                .spawn(move || fill_ring(rx, producer, device_rate, channels, ring_level2))?;
+        }
 
-        let ring_w   = ring.clone();
         let vol_w    = volume.clone();
         let paused_w = paused.clone();
-
-        let fmt  = config.sample_format();
+        let fmt      = config.sample_format();
         let cfg: cpal::StreamConfig = config.into();
 
-        let stream = build_stream(&device, &cfg, fmt, ring_w, vol_w, paused_w)?;
+        let stream = build_stream(&device, &cfg, fmt, consumer, vol_w, paused_w)?;
         stream.play().context("play stream audio")?;
 
-        Ok(Self { _stream: stream, sender: tx, volume, paused, device_rate, channels })
+        Ok(Self {
+            _stream: stream,
+            sender: tx,
+            volume,
+            paused,
+            device_rate,
+            channels,
+            ring_level,
+        })
     }
 
-    /// Taux d'échantillonnage du périphérique — à passer au décodeur.
     pub fn sample_rate(&self) -> u32 { self.device_rate }
 
-    /// Nombre de canaux du périphérique (toujours 2 après downmix).
-    pub fn channels(&self) -> usize { self.channels }
+    /// Secondes d'audio actuellement dans le ring buffer.
+    pub fn buffered_secs(&self) -> f64 {
+        let samples = self.ring_level.load(Ordering::Relaxed) as f64;
+        samples / (self.device_rate as f64 * self.channels as f64)
+    }
 
+    /// Pousse un frame décodé. Bloque jusqu'à 200 ms si le canal est plein.
     pub fn push_frame(&self, frame: DecodedAudioFrame) {
-        let _ = self.sender.try_send(frame);
+        let _ = self.sender.send_timeout(frame, std::time::Duration::from_millis(200));
     }
 
     pub fn set_volume(&self, v: f32) {
@@ -108,73 +97,79 @@ impl AudioEngine {
     }
 
     pub fn set_paused(&self, p: bool) {
-        *self.paused.lock() = p;
+        self.paused.store(p, Ordering::Relaxed);
     }
 }
 
-// ─── Construction du stream CPAL (F32 / I16 / U16) ─────────────────────────
+// ─── Construction du stream CPAL ────────────────────────────────────────────
 
 fn build_stream(
     device:  &cpal::Device,
     cfg:     &cpal::StreamConfig,
     fmt:     cpal::SampleFormat,
-    ring:    Arc<Mutex<RingBuffer>>,
+    consumer: HeapConsumer<f32>,
     volume:  Arc<Mutex<f32>>,
-    paused:  Arc<Mutex<bool>>,
+    paused:  Arc<AtomicBool>,
 ) -> Result<cpal::Stream> {
-    macro_rules! make_f32_callback {
-        ($ring:expr, $vol:expr, $paused:expr) => {{
-            let ring_w   = $ring.clone();
-            let vol_w    = $vol.clone();
-            let paused_w = $paused.clone();
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if *paused_w.lock() { data.fill(0.0); return; }
-                ring_w.lock().pop_slice(data);
-                let vol = *vol_w.lock();
-                if vol != 1.0 { for s in data.iter_mut() { *s *= vol; } }
-            }
-        }};
-    }
-
     let err_fn = |e: cpal::StreamError| log::error!("cpal error: {e}");
+
+    // Consumer partagé via Mutex léger (accès exclusif CPAL uniquement)
+    let cons = Arc::new(parking_lot::Mutex::new(consumer));
 
     let stream = match fmt {
         cpal::SampleFormat::F32 => {
-            device.build_output_stream(cfg, make_f32_callback!(ring, volume, paused), err_fn, None)?
-        }
-        cpal::SampleFormat::I16 => {
-            let ring_w   = ring.clone();
+            let cons_w   = cons.clone();
             let vol_w    = volume.clone();
             let paused_w = paused.clone();
             device.build_output_stream(
                 cfg,
-                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    if *paused_w.lock() { data.fill(0); return; }
+                move |data: &mut [f32], _| {
+                    if paused_w.load(Ordering::Relaxed) {
+                        data.fill(0.0); return;
+                    }
+                    let n = cons_w.lock().pop_slice(data);
+                    if n < data.len() { data[n..].fill(0.0); } // underrun → silence
+                    let vol = *vol_w.lock();
+                    if (vol - 1.0).abs() > 0.001 {
+                        for s in data.iter_mut() { *s *= vol; }
+                    }
+                },
+                err_fn, None,
+            )?
+        }
+        cpal::SampleFormat::I16 => {
+            let cons_w   = cons.clone();
+            let vol_w    = volume.clone();
+            let paused_w = paused.clone();
+            device.build_output_stream(
+                cfg,
+                move |data: &mut [i16], _| {
+                    if paused_w.load(Ordering::Relaxed) { data.fill(0); return; }
                     let mut tmp = vec![0f32; data.len()];
-                    ring_w.lock().pop_slice(&mut tmp);
+                    let n = cons_w.lock().pop_slice(&mut tmp);
+                    if n < tmp.len() { tmp[n..].fill(0.0); }
                     let vol = *vol_w.lock();
                     for (o, s) in data.iter_mut().zip(tmp.iter()) {
-                        let v = (*s * vol).clamp(-1.0, 1.0);
-                        *o = (v * i16::MAX as f32) as i16;
+                        *o = ((s * vol).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
                     }
                 },
                 err_fn, None,
             )?
         }
         cpal::SampleFormat::U16 => {
-            let ring_w   = ring.clone();
+            let cons_w   = cons.clone();
             let vol_w    = volume.clone();
             let paused_w = paused.clone();
             device.build_output_stream(
                 cfg,
-                move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                    if *paused_w.lock() { data.fill(32768); return; }
+                move |data: &mut [u16], _| {
+                    if paused_w.load(Ordering::Relaxed) { data.fill(32768); return; }
                     let mut tmp = vec![0f32; data.len()];
-                    ring_w.lock().pop_slice(&mut tmp);
+                    let n = cons_w.lock().pop_slice(&mut tmp);
+                    if n < tmp.len() { tmp[n..].fill(0.0); }
                     let vol = *vol_w.lock();
                     for (o, s) in data.iter_mut().zip(tmp.iter()) {
-                        let v = (*s * vol).clamp(-1.0, 1.0);
-                        *o = ((v + 1.0) * 0.5 * u16::MAX as f32) as u16;
+                        *o = (((s * vol).clamp(-1.0, 1.0) + 1.0) * 0.5 * u16::MAX as f32) as u16;
                     }
                 },
                 err_fn, None,
@@ -186,40 +181,49 @@ fn build_stream(
     Ok(stream)
 }
 
-// ─── Thread de remplissage : resampling dynamique ───────────────────────────
+// ─── Thread fill_ring : resampling + downmix + écriture lock-free ────────────
 
 fn fill_ring(
-    rx:          Receiver<DecodedAudioFrame>,
-    ring:        Arc<Mutex<RingBuffer>>,
-    device_rate: u32,
-    dev_channels: usize,
+    rx:           Receiver<DecodedAudioFrame>,
+    mut producer: HeapProducer<f32>,
+    device_rate:  u32,
+    dev_ch:       usize,
+    ring_level:   Arc<AtomicU64>,
 ) {
     let mut resampler: Option<AudioResampler> = None;
+    // Cible : garder au plus 2 secondes dans le ring pour éviter la dérive
+    let target_cap = device_rate as usize * dev_ch * 2;
 
     for frame in rx {
-        let in_rate = frame.sample_rate;
-        let in_ch   = frame.channels as usize;
+        // ── Backpressure : ne pas accumuler plus que la cible ──
+        // Attend que le ring ait de la place avant de pusher
+        loop {
+            let occupied = producer.len();
+            if occupied < target_cap { break; }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
 
-        // Downmix surround → stéréo si nécessaire
-        let stereo = if in_ch == dev_channels {
+        let in_ch   = frame.channels as usize;
+        let in_rate = frame.sample_rate;
+
+        // Downmix surround → stéréo
+        let stereo = if in_ch == dev_ch {
             frame.samples.clone()
         } else {
             downmix_to_stereo(&frame.samples, in_ch)
         };
 
-        // Resampling si le décodeur n'est pas au taux du périphérique
+        // Resampling si taux différents
         let final_samples = if in_rate == device_rate {
             stereo
         } else {
-            // Crée ou recrée le resampler si les paramètres changent
+            let out_ch   = dev_ch.min(2);
             let needs_new = resampler.as_ref()
                 .map(|r| r.in_rate() != in_rate || r.out_rate() != device_rate)
                 .unwrap_or(true);
-
             if needs_new {
-                resampler = AudioResampler::new(in_rate, device_rate, dev_channels.min(2)).ok();
+                resampler = AudioResampler::new(in_rate, device_rate, out_ch).ok();
             }
-
             if let Some(r) = &mut resampler {
                 r.process_interleaved(&stereo).unwrap_or(stereo)
             } else {
@@ -227,61 +231,48 @@ fn fill_ring(
             }
         };
 
-        ring.lock().push_slice(&final_samples);
+        // Push dans le ring lock-free
+        let pushed = producer.push_slice(&final_samples);
+        let occupied = producer.len();
+        ring_level.store(occupied as u64, Ordering::Relaxed);
+
+        if pushed < final_samples.len() {
+            log::debug!("audio ring overflow: dropped {} samples", final_samples.len() - pushed);
+        }
     }
 }
 
-/// Downmix N canaux → stéréo par simple moyenne des canaux gauche/droit.
-/// Mapping standard : FL FR FC LFE BL BR SL SR
-fn downmix_to_stereo(samples: &[f32], in_channels: usize) -> Vec<f32> {
-    if in_channels == 0 { return Vec::new(); }
-    let frames = samples.len() / in_channels;
+// ─── Downmix N canaux → stéréo ───────────────────────────────────────────────
+
+fn downmix_to_stereo(samples: &[f32], in_ch: usize) -> Vec<f32> {
+    if in_ch == 0 { return Vec::new(); }
+    let frames = samples.len() / in_ch;
     let mut out = Vec::with_capacity(frames * 2);
 
     for f in 0..frames {
-        let base = f * in_channels;
-        let (l, r) = match in_channels {
-            1 => {
-                let m = samples[base];
-                (m, m)
-            }
-            2 => (samples[base], samples[base + 1]),
-            // 5.1 : FL FR FC LFE BL BR
+        let b = f * in_ch;
+        let (l, r) = match in_ch {
+            1 => { let m = samples[b]; (m, m) }
+            2 => (samples[b], samples[b + 1]),
             6 => {
-                let fl = samples[base];
-                let fr = samples[base + 1];
-                let fc = samples[base + 2];
-                let _lfe = samples[base + 3];
-                let bl = samples[base + 4];
-                let br = samples[base + 5];
-                let l = (fl + fc * 0.707 + bl * 0.707).clamp(-1.0, 1.0);
-                let r = (fr + fc * 0.707 + br * 0.707).clamp(-1.0, 1.0);
-                (l, r)
+                let (fl, fr, fc, bl, br) = (samples[b], samples[b+1], samples[b+2], samples[b+4], samples[b+5]);
+                ((fl + fc*0.707 + bl*0.707).clamp(-1.0, 1.0),
+                 (fr + fc*0.707 + br*0.707).clamp(-1.0, 1.0))
             }
-            // 7.1 : FL FR FC LFE BL BR SL SR
             8 => {
-                let fl = samples[base];
-                let fr = samples[base + 1];
-                let fc = samples[base + 2];
-                let _lfe = samples[base + 3];
-                let bl = samples[base + 4];
-                let br = samples[base + 5];
-                let sl = samples[base + 6];
-                let sr = samples[base + 7];
-                let l = (fl + fc * 0.707 + bl * 0.5 + sl * 0.707).clamp(-1.0, 1.0);
-                let r = (fr + fc * 0.707 + br * 0.5 + sr * 0.707).clamp(-1.0, 1.0);
-                (l, r)
+                let (fl, fr, fc, bl, br, sl, sr) =
+                    (samples[b], samples[b+1], samples[b+2], samples[b+4], samples[b+5], samples[b+6], samples[b+7]);
+                ((fl + fc*0.707 + bl*0.5 + sl*0.707).clamp(-1.0, 1.0),
+                 (fr + fc*0.707 + br*0.5 + sr*0.707).clamp(-1.0, 1.0))
             }
-            // Cas générique : moyenne des canaux pairs/impairs
             n => {
-                let mut lsum = 0f32;
-                let mut rsum = 0f32;
+                let (mut ls, mut rs) = (0f32, 0f32);
                 for ch in 0..n {
-                    if ch % 2 == 0 { lsum += samples[base + ch]; }
-                    else           { rsum += samples[base + ch]; }
+                    if ch % 2 == 0 { ls += samples[b + ch]; }
+                    else           { rs += samples[b + ch]; }
                 }
-                let half = (n / 2).max(1) as f32;
-                ((lsum / half).clamp(-1.0, 1.0), (rsum / half).clamp(-1.0, 1.0))
+                let h = (n / 2).max(1) as f32;
+                ((ls / h).clamp(-1.0, 1.0), (rs / h).clamp(-1.0, 1.0))
             }
         };
         out.push(l);

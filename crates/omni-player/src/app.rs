@@ -39,6 +39,8 @@ pub struct OmniApp {
     image_viewer:      ImageViewer,
     image_texture:     Option<egui::TextureHandle>,
     image_path_loaded: String,
+    // A/V sync: frame en attente d'affichage (PTS pas encore atteint)
+    pending_video_frame: Option<omni_core::decoder::DecodedVideoFrame>,
 }
 
 impl OmniApp {
@@ -71,6 +73,7 @@ impl OmniApp {
             image_viewer: ImageViewer::default(),
             image_texture: None,
             image_path_loaded: String::new(),
+            pending_video_frame: None,
         }
     }
 
@@ -142,21 +145,62 @@ impl OmniApp {
     }
 
     fn process_seek(&mut self) {
-        if let Some(pos) = self.seek_request.take() { self.player.seek(pos); }
+        if let Some(pos) = self.seek_request.take() {
+            self.player.seek(pos);
+            self.pending_video_frame = None;
+        }
     }
 
     fn pump_audio(&mut self) {
         let Some(audio) = &self.audio else { return };
-        while let Some(frame) = self.player.try_recv_audio_frame() {
-            audio.push_frame(frame);
-        }
         audio.set_paused(self.player.state == PlayerState::Paused);
         audio.set_volume(self.player.effective_volume());
+
+        // N'envoie des frames que si le buffer audio a moins de 1.5 s d'avance.
+        // Évite d'inonder le ring buffer et de causer des saccades.
+        const MAX_LOOKAHEAD_SECS: f64 = 1.5;
+        while audio.buffered_secs() < MAX_LOOKAHEAD_SECS {
+            if let Some(frame) = self.player.try_recv_audio_frame() {
+                audio.push_frame(frame);
+            } else {
+                break;
+            }
+        }
     }
 
     fn pump_video(&mut self) {
-        while let Some(frame) = self.player.try_recv_video_frame() {
-            *self.video_frame.lock() = Some(frame);
+        if self.player.is_image_mode() { return; }
+        if !matches!(self.player.state,
+            PlayerState::Playing | PlayerState::Buffering(_)) { return; }
+
+        let clock = self.player.clock.position_secs();
+
+        // Si on a un frame en attente, l'afficher dès que son PTS est atteint
+        if let Some(ref pf) = self.pending_video_frame {
+            if pf.pts_secs <= clock + 0.020 {
+                let frame = self.pending_video_frame.take().unwrap();
+                *self.video_frame.lock() = Some(frame);
+            }
+            // Ne pas dépiler d'autres frames tant que le pending n'est pas montré
+            return;
+        }
+
+        // Dépiler des frames de la queue
+        loop {
+            let Some(frame) = self.player.try_recv_video_frame() else { break };
+
+            if frame.pts_secs < clock - 0.100 {
+                // Frame en retard de plus de 100 ms → dropper, continuer
+                continue;
+            }
+            if frame.pts_secs <= clock + 0.020 {
+                // Frame due maintenant → afficher
+                *self.video_frame.lock() = Some(frame);
+            } else {
+                // Frame trop en avance → mettre en attente, stopper
+                self.pending_video_frame = Some(frame);
+            }
+            break;
         }
     }
 
@@ -308,7 +352,10 @@ impl eframe::App for OmniApp {
         self.pump_video();
         self.ensure_image_texture(ctx);
 
-        if self.player.state == PlayerState::EndOfFile { self.playlist_next(); }
+        if self.player.state == PlayerState::EndOfFile {
+            self.pending_video_frame = None;
+            self.playlist_next();
+        }
 
         // Entrées clavier
         self.handle_keyboard(ctx, now);
@@ -413,7 +460,10 @@ impl eframe::App for OmniApp {
             settings::show(ctx, &mut self.show_settings, &mut self.config);
         }
 
-        if self.player.is_active() { ctx.request_repaint(); }
+        // Repaint cadencé à ~60 fps max quand actif (évite over-polling)
+        if self.player.is_active() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(14));
+        }
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

@@ -11,3 +11,4 @@ crossbeam-channel = { workspace = true }
 anyhow            = { workspace = true }
 log               = { workspace = true }
 parking_lot       = { workspace = true }
+ringbuf           = { workspace = true }
