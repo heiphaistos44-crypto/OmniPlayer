@@ -91,7 +91,7 @@ pub fn probe_file(path: &Path) -> Result<MediaInfo> {
                     // Détection HDR via color space / color transfer
                     let color_space = format!("{:?}", dec.color_space());
                     let hdr = matches!(
-                        dec.color_transfer(),
+                        dec.color_transfer_characteristic(),
                         ffmpeg::color::TransferCharacteristic::SMPTE2084
                             | ffmpeg::color::TransferCharacteristic::ARIB_STD_B67
                     );

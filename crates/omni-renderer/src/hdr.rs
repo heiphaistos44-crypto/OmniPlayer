@@ -1,4 +1,4 @@
-use wgpu::*;
+use wgpu::{util::DeviceExt, *};
 
 const HDR_SHADER: &str = include_str!("../../../assets/shaders/hdr_tonemap.wgsl");
 
@@ -161,7 +161,7 @@ impl HdrTonemapper {
     }
 
     /// Encode le pass de tone mapping dans un RenderPass existant.
-    pub fn render<'rp>(&'rp self, rp: &mut RenderPass<'rp>) {
+    pub fn render(&self, rp: &mut RenderPass<'static>) {
         if let Some(bg) = &self.bind_group {
             rp.set_pipeline(&self.pipeline);
             rp.set_bind_group(0, bg, &[]);

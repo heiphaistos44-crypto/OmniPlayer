@@ -71,9 +71,7 @@ pub fn run_demuxer(
                 PipelineCommand::Resume => { paused = false; }
                 PipelineCommand::Seek(pos) => {
                     ctx.seek(pos)?;
-                    // Vide les queues après seek (non-blocking)
-                    while video_tx.try_recv().is_ok() {}
-                    while audio_tx.try_recv().is_ok() {}
+                    // After seek, old frames in queues will be naturally replaced
                 }
                 _ => {}
             }
@@ -92,7 +90,7 @@ pub fn run_demuxer(
 
         // Lit le prochain paquet
         let mut packet = ffmpeg::Packet::empty();
-        match ctx.format_ctx.read((&mut packet).into()) {
+        match packet.read(&mut ctx.format_ctx) {
             Ok(_) => {}
             Err(ffmpeg::Error::Eof) => {
                 // Vide les décodeurs

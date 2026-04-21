@@ -1,15 +1,16 @@
-# Windows x64 target — primary build
+# Windows x64 MSVC target
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+avx2,+fma"]
 
-# Windows x32 target
-[target.i686-pc-windows-msvc]
-rustflags = []
-
 [env]
-# Override via CI or environment: set FFMPEG_DIR=C:\ffmpeg
-# FFMPEG_DIR = "C:\\ffmpeg"
-RUST_LOG = "info"
+FFMPEG_DIR      = "C:/ffmpeg"
+LIBCLANG_PATH   = "C:/Program Files/LLVM/bin"
+RUST_LOG        = "info"
+# Use clang-cl so cc crate can compile FFmpeg's check.c (needs __attribute__ support)
+CC              = "C:/Program Files/LLVM/bin/clang-cl.exe"
+CXX             = "C:/Program Files/LLVM/bin/clang-cl.exe"
+# MinGW target + headers for bindgen so struct sizes match BtbN FFmpeg (MinGW-compiled) DLLs
+BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-w64-mingw32 -D_UCRT -IC:/PROGRA~1/LLVM/lib/clang/22/include -IC:/Users/Momo/scoop/apps/mingw/current/x86_64-w64-mingw32/include -IC:/Users/Momo/scoop/apps/mingw/current/include"
 
 [build]
-jobs = 0   # use all available cores
+# jobs = 0   # désactivé — utilise la valeur par défaut (nombre de cores)

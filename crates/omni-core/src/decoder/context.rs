@@ -99,7 +99,7 @@ impl DecodeContext {
     pub fn seek(&mut self, position_secs: f64) -> Result<()> {
         let ts = (position_secs * f64::from(ffmpeg::ffi::AV_TIME_BASE)) as i64;
         self.format_ctx
-            .seek(ts, ts..=ts)
+            .seek(ts, ts..)
             .context("seek échoué")
     }
 }

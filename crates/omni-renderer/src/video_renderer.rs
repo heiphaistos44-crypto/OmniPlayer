@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use wgpu::*;
+use wgpu::{util::DeviceExt, *};
 
 use crate::frame_upload::YuvTextures;
 use omni_core::decoder::DecodedVideoFrame;
@@ -180,7 +180,7 @@ impl VideoRenderer {
     }
 
     /// Encode le pass de rendu vidéo dans un RenderPass existant.
-    pub fn render<'rp>(&'rp self, rp: &mut RenderPass<'rp>) {
+    pub fn render(&self, rp: &mut RenderPass<'static>) {
         if let Some(bg) = &self.bind_group {
             rp.set_pipeline(&self.pipeline);
             rp.set_bind_group(0, bg, &[]);

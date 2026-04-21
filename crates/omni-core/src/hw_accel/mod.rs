@@ -40,8 +40,6 @@ impl HwAccelContext {
                 ctx.set_threading(ffmpeg::codec::threading::Config {
                     kind:  ffmpeg::codec::threading::Type::Frame,
                     count: 4,
-                    #[cfg(not(feature = "ffmpeg_6_0"))]
-                    safe:  true,
                 });
             }
             HwKind::D3D11Va | HwKind::Cuda | HwKind::None => {}

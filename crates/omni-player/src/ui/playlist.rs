@@ -130,7 +130,7 @@ fn handle_drop(ui: &mut Ui, items: &mut Vec<String>) {
             egui::Order::Foreground,
             egui::Id::new("drop_target"),
         ))
-        .rect_stroke(rect, 4.0, egui::Stroke::new(2.0, ACCENT));
+        .rect_stroke(rect, 4.0, egui::Stroke::new(2.0, ACCENT), egui::StrokeKind::Middle);
     }
 
     let dropped: Vec<String> = ui.ctx().input(|i| {

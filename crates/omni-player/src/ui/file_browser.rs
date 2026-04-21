@@ -2,6 +2,7 @@ use egui::{Color32, Context, RichText, ScrollArea, Vec2, Window};
 use std::path::{Path, PathBuf};
 use omni_core::SUPPORTED_EXTENSIONS;
 
+#[derive(Clone)]
 pub struct FileBrowser {
     current_dir: PathBuf,
     entries:     Vec<DirEntry>,

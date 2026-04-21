@@ -1,10 +1,13 @@
 mod app;
 mod config;
 mod player;
+mod services;
 mod ui;
+mod video_callback;
 
 use anyhow::Result;
 use eframe::{NativeOptions, egui::ViewportBuilder};
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     env_logger::builder()
@@ -34,11 +37,10 @@ fn main() -> Result<()> {
     .map_err(|e| anyhow::anyhow!("eframe: {e}"))
 }
 
-fn load_icon() -> eframe::IconData {
-    // Icône embarquée (32×32 RGBA) — fallback transparent si fichier absent
-    eframe::IconData {
+fn load_icon() -> Arc<egui::IconData> {
+    Arc::new(egui::IconData {
         rgba:   vec![0u8; 32 * 32 * 4],
         width:  32,
         height: 32,
-    }
+    })
 }
