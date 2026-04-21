@@ -17,7 +17,7 @@ pub fn show(ctx: &Context, open: &mut bool, cfg: &mut AppConfig) {
 
                 ui.horizontal(|ui| {
                     ui.label("Accélération matérielle");
-                    ComboBox::from_id_source("hw_accel")
+                    ComboBox::from_id_salt("hw_accel")
                         .selected_text(&cfg.hw_accel)
                         .show_ui(ui, |ui| {
                             for opt in &["auto", "dxva2", "d3d11va", "none"] {
@@ -66,7 +66,7 @@ pub fn show(ctx: &Context, open: &mut bool, cfg: &mut AppConfig) {
 
                 ui.horizontal(|ui| {
                     ui.label("Langue préférée");
-                    ComboBox::from_id_source("sub_lang")
+                    ComboBox::from_id_salt("sub_lang")
                         .selected_text(&cfg.subtitle_lang)
                         .show_ui(ui, |ui| {
                             for lang in &["fr", "en", "es", "de", "it", "pt", "ja", "ko", "zh"] {

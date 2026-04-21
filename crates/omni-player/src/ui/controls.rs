@@ -2,9 +2,7 @@ use egui::{Color32, CornerRadius, Response, Sense, Stroke, Ui, Vec2};
 use crate::player::{Player, PlayerState};
 
 const ACCENT:    Color32 = Color32::from_rgb(74, 158, 255);
-const ACCENT_DIM: Color32 = Color32::from_rgb(40, 90, 160);
-const SURFACE:   Color32 = Color32::from_rgba_premultiplied(20, 20, 30, 200);
-const SURFACE2:  Color32 = Color32::from_rgba_premultiplied(30, 32, 44, 200);
+const SURFACE2:  Color32 = Color32::from_rgba_premultiplied(24, 25, 35, 200);
 const DIM:       Color32 = Color32::from_gray(120);
 const HDR_COLOR: Color32 = Color32::from_rgb(255, 160, 40);
 
@@ -20,7 +18,7 @@ pub fn show(ui: &mut Ui, player: &mut Player, seek_out: &mut Option<f64>) {
     // Ligne de séparation haute
     p.line_segment(
         [egui::pos2(bg_rect.left(), bg_rect.top()), egui::pos2(bg_rect.right(), bg_rect.top())],
-        Stroke::new(1.0, Color32::from_rgba_premultiplied(74, 158, 255, 40)),
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(74, 158, 255, 40)),
     );
 
     ui.style_mut().spacing.item_spacing = Vec2::new(5.0, 2.0);

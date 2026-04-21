@@ -76,7 +76,7 @@ impl OmniApp {
 
     fn apply_theme(ctx: &Context) {
         let mut v = egui::Visuals::dark();
-        v.window_corner_radius      = egui::Rounding::from(10.0_f32);
+        v.window_corner_radius      = egui::CornerRadius::from(10.0_f32);
         v.panel_fill                = egui::Color32::from_rgb(10, 10, 16);
         v.window_fill               = egui::Color32::from_rgb(16, 16, 24);
         v.window_shadow             = egui::Shadow {
@@ -86,11 +86,11 @@ impl OmniApp {
             color: egui::Color32::from_black_alpha(120),
         };
         v.widgets.inactive.bg_fill  = egui::Color32::from_rgb(26, 26, 38);
-        v.widgets.inactive.corner_radius = egui::Rounding::from(5.0_f32);
+        v.widgets.inactive.corner_radius = egui::CornerRadius::from(5.0_f32);
         v.widgets.hovered.bg_fill   = egui::Color32::from_rgb(36, 46, 72);
-        v.widgets.hovered.corner_radius  = egui::Rounding::from(5.0_f32);
+        v.widgets.hovered.corner_radius  = egui::CornerRadius::from(5.0_f32);
         v.widgets.active.bg_fill    = egui::Color32::from_rgb(55, 100, 200);
-        v.widgets.active.corner_radius   = egui::Rounding::from(5.0_f32);
+        v.widgets.active.corner_radius   = egui::CornerRadius::from(5.0_f32);
         v.selection.bg_fill         = egui::Color32::from_rgb(40, 80, 160);
         v.hyperlink_color           = ACCENT;
         v.override_text_color       = Some(egui::Color32::from_gray(225));

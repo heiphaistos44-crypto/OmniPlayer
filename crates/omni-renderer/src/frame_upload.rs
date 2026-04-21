@@ -42,7 +42,7 @@ impl YuvTextures {
             queue.write_texture(
                 tex.as_image_copy(),
                 data,
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset:         0,
                     bytes_per_row:  Some(stride as u32),
                     rows_per_image: Some(h),

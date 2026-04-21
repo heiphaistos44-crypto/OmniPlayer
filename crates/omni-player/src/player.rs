@@ -86,7 +86,6 @@ impl Player {
     }
 
     fn open_image(&mut self, path: &str) -> Result<()> {
-        use image::GenericImageView as _;
         let img = image::open(path)
             .with_context(|| format!("image non lisible : {path}"))?
             .into_rgba8();

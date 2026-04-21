@@ -1,15 +1,13 @@
 use egui::{Color32, Pos2, Rect, Sense, TextureHandle, Ui, Vec2};
 
 pub struct ImageViewer {
-    zoom:    f32,
-    pan:     Vec2,
-    dragging: bool,
-    drag_start_pan: Vec2,
+    zoom: f32,
+    pan:  Vec2,
 }
 
 impl Default for ImageViewer {
     fn default() -> Self {
-        Self { zoom: 1.0, pan: Vec2::ZERO, dragging: false, drag_start_pan: Vec2::ZERO }
+        Self { zoom: 1.0, pan: Vec2::ZERO }
     }
 }
 
@@ -61,14 +59,7 @@ impl ImageViewer {
         }
 
         // Drag → pan
-        if resp.drag_started() {
-            self.drag_start_pan = self.pan;
-        }
         if resp.dragged() {
-            self.pan = self.drag_start_pan + resp.drag_delta()
-                + ui.ctx().input(|i| i.pointer.press_origin())
-                    .map(|o| o - o) // workaround: just use delta
-                    .unwrap_or(Vec2::ZERO);
             self.pan += resp.drag_delta();
         }
 

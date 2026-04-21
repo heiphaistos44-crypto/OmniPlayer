@@ -111,46 +111,48 @@ fn draw_idle_screen(ui: &mut Ui, rect: Rect) {
 
     let c = rect.center();
 
-    // Cercle de fond décoratif
-    p.circle_filled(c, 64.0,
-        Color32::from_rgba_premultiplied(74, 158, 255, 12));
-    p.circle_stroke(c, 64.0,
-        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(74, 158, 255, 35)));
+    // Anneau décoratif (stroke seulement, pas de fill)
+    p.circle_stroke(c, 54.0,
+        egui::Stroke::new(1.5, Color32::from_rgba_unmultiplied(74, 158, 255, 55)));
+    p.circle_stroke(c, 56.0,
+        egui::Stroke::new(0.5, Color32::from_rgba_unmultiplied(74, 158, 255, 22)));
 
-    // Icône play
-    p.text(egui::pos2(c.x, c.y - 16.0), egui::Align2::CENTER_CENTER,
-        "▶", egui::FontId::proportional(62.0), Color32::from_rgb(74, 158, 255));
+    // Icône play centrée dans l'anneau
+    p.text(c, egui::Align2::CENTER_CENTER,
+        "▶", egui::FontId::proportional(48.0), Color32::from_rgb(74, 158, 255));
 
-    p.text(egui::pos2(c.x, c.y + 42.0), egui::Align2::CENTER_CENTER,
-        "OmniPlayer", egui::FontId::proportional(26.0), Color32::from_gray(240));
+    p.text(egui::pos2(c.x, c.y + 74.0), egui::Align2::CENTER_CENTER,
+        "OmniPlayer", egui::FontId::proportional(24.0), Color32::from_gray(235));
 
-    p.text(egui::pos2(c.x, c.y + 68.0), egui::Align2::CENTER_CENTER,
-        "Glissez un fichier ici  ·  Ctrl+O pour ouvrir  ·  Ctrl+L pour une URL",
-        egui::FontId::proportional(12.0), Color32::from_gray(115));
+    p.text(egui::pos2(c.x, c.y + 97.0), egui::Align2::CENTER_CENTER,
+        "Glissez un fichier ici  ·  Ctrl+O  ·  Ctrl+L",
+        egui::FontId::proportional(11.5), Color32::from_gray(110));
+
+    // Séparateur fin
+    p.line_segment(
+        [egui::pos2(c.x - 100.0, c.y + 114.0), egui::pos2(c.x + 100.0, c.y + 114.0)],
+        egui::Stroke::new(0.5, Color32::from_rgba_unmultiplied(74, 158, 255, 40)),
+    );
 
     let shortcuts = [
-        ("Espace", "Lecture / Pause"),
-        ("← / →",  "±10 secondes"),
-        ("↑ / ↓",  "Volume ±10 %"),
-        ("F",       "Plein écran"),
-        ("M",       "Muet"),
-        ("S",       "Sous-titres"),
-        ("A",       "Piste audio"),
-        ("I",       "Infos média"),
-        ("?",       "Aide raccourcis"),
+        ("Espace",  "Lecture / Pause"),
+        ("← / →",   "±10 secondes"),
+        ("↑ / ↓",   "Volume ±10 %"),
+        ("F",        "Plein écran"),
+        ("M",        "Muet"),
+        ("S",        "Sous-titres"),
+        ("A",        "Piste audio"),
+        ("I",        "Infos média"),
+        ("Ctrl+O",   "Ouvrir fichier"),
+        ("Ctrl+L",   "Ouvrir URL"),
     ];
-    let mut y = c.y + 98.0;
+    let mut y = c.y + 130.0;
     for (key, action) in &shortcuts {
-        p.rect_filled(
-            Rect::from_center_size(egui::pos2(c.x, y), Vec2::new(260.0, 16.0)),
-            CornerRadius::from(3.0_f32),
-            Color32::from_rgba_premultiplied(255, 255, 255, 4),
-        );
-        p.text(egui::pos2(c.x - 96.0, y), egui::Align2::RIGHT_CENTER,
-            *key, egui::FontId::monospace(10.5), Color32::from_rgb(74, 158, 255));
-        p.text(egui::pos2(c.x - 80.0, y), egui::Align2::LEFT_CENTER,
-            *action, egui::FontId::proportional(11.0), Color32::from_gray(150));
-        y += 19.0;
+        p.text(egui::pos2(c.x - 88.0, y), egui::Align2::RIGHT_CENTER,
+            *key, egui::FontId::monospace(10.0), Color32::from_rgb(74, 158, 255));
+        p.text(egui::pos2(c.x - 72.0, y), egui::Align2::LEFT_CENTER,
+            *action, egui::FontId::proportional(10.5), Color32::from_gray(145));
+        y += 17.5;
     }
 }
 
